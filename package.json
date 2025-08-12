@@ -1,0 +1,61 @@
+{
+  "name": "brain-system",
+  "version": "1.0.0",
+  "description": "Production-ready Brain System with metrics, versioning, and rollback",
+  "main": "backend/index.ts",
+  "scripts": {
+    "start": "node dist/backend/index.js",
+    "dev": "nodemon backend/index.ts",
+    "build": "tsc",
+    "test": "jest",
+    "db:migrate": "psql $DATABASE_URL < backend/db/production-schema.sql",
+    "db:migrate:dev": "psql postgresql://localhost/brain_dev < backend/db/production-schema.sql",
+    "brain:index": "ts-node backend/indexer/cli.ts",
+    "brain:version:list": "ts-node -e \"require('./backend/version/manager').versionManager.listVersions().then(console.log)\"",
+    "brain:version:switch": "ts-node -e \"require('./backend/version/manager').versionManager.rollback(process.argv[1])\"",
+    "brain:rollback": "ts-node -e \"require('./backend/version/manager').versionManager.rollback(process.argv[1])\"",
+    "brain:health": "curl -sS ${APP_URL:-http://localhost:3000}/brain/health | jq",
+    "test:load": "npx autocannon -d 30 -c 50 ${APP_URL:-http://localhost:3000}/brain/search?q=test",
+    "test:sanity": "npm run brain:health",
+    "pulse:morning": "ts-node backend/pulse/morning.ts",
+    "pulse:evening": "ts-node backend/pulse/evening.ts",
+    "cron:start": "node dist/backend/jobs/cron.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "pg": "^8.11.3",
+    "redis": "^4.6.12",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "body-parser": "^1.20.2",
+    "uuid": "^9.0.1",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.10.9",
+    "@types/node": "^20.10.5",
+    "@types/cors": "^2.8.17",
+    "@types/compression": "^1.7.5",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2",
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.11",
+    "autocannon": "^7.14.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "railway": {
+    "build": "npm install && npm run build && npm run db:migrate",
+    "start": "npm start",
+    "healthcheckPath": "/health/live",
+    "healthcheckTimeout": 10,
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
