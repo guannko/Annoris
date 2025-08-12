@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { getHealthMetrics, getLatencyMetrics } from '../middleware/metrics';
+import { getHealthMetrics, getLatencyMetrics, logMetric } from '../middleware/metrics';
 import { versionManager } from '../version/manager';
+import { getRedis, safeRedisOp } from '../lib/redis';
 import { Pool } from 'pg';
 
 export const health = Router();
@@ -22,42 +23,97 @@ health.get('/live', (req, res) => {
 });
 
 /**
- * GET /health/ready - Readiness check
+ * GET /health/ready - Readiness check with Redis caching
  * Checks DB connection and index freshness
  */
 health.get('/ready', async (req, res) => {
-  const checks = {
-    database: false,
-    indexFresh: false,
-    ready: false
-  };
+  const cacheKey = 'health:ready:v1';
   
   try {
+    // Try to get from Redis cache first
+    const cached = await safeRedisOp(
+      async () => {
+        const redis = getRedis();
+        if (!redis) return null;
+        const data = await redis.get(cacheKey);
+        if (data) {
+          logMetric('health_ready_cache_hits', 1);
+          return data;
+        }
+        return null;
+      },
+      null
+    );
+    
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+    
+    // Perform actual health checks
+    const checks = {
+      database: false,
+      indexFresh: false,
+      redis: false,
+      ready: false
+    };
+    
     // Check database connection
-    const dbCheck = await pool.query('SELECT 1');
-    checks.database = !!dbCheck.rows;
+    try {
+      const dbCheck = await pool.query('SELECT 1');
+      checks.database = !!dbCheck.rows;
+    } catch (error) {
+      checks.database = false;
+    }
     
     // Check index freshness
-    const dbHealth = await getHealthMetrics();
-    const freshnessMinutes = dbHealth.freshness_minutes || 999;
-    checks.indexFresh = freshnessMinutes < 10; // Must be < 10 minutes old
+    try {
+      const dbHealth = await getHealthMetrics();
+      const freshnessMinutes = dbHealth.freshness_minutes || 999;
+      checks.indexFresh = freshnessMinutes < 10; // Must be < 10 minutes old
+    } catch (error) {
+      checks.indexFresh = false;
+    }
+    
+    // Check Redis connection
+    checks.redis = await safeRedisOp(
+      async () => {
+        const redis = getRedis();
+        if (!redis) return false;
+        await redis.ping();
+        return true;
+      },
+      false
+    );
     
     // Overall readiness
     checks.ready = checks.database && checks.indexFresh;
     
     const statusCode = checks.ready ? 200 : 503;
     
-    res.status(statusCode).json({
+    const response = {
       status: checks.ready ? 'ready' : 'not ready',
       checks,
-      freshness_minutes: Math.round(freshnessMinutes),
       timestamp: new Date().toISOString()
-    });
+    };
+    
+    // Cache the response for 60 seconds if healthy
+    if (checks.ready) {
+      await safeRedisOp(
+        async () => {
+          const redis = getRedis();
+          if (redis) {
+            await redis.set(cacheKey, JSON.stringify(response), 'EX', 60);
+          }
+        },
+        null
+      );
+    }
+    
+    res.status(statusCode).json(response);
     
   } catch (error) {
     res.status(503).json({
       status: 'not ready',
-      checks,
       error: error.message,
       timestamp: new Date().toISOString()
     });
