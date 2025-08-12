@@ -1,6 +1,6 @@
 {
   "name": "brain-system",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Production-ready Brain System with metrics, versioning, and rollback",
   "main": "backend/index.ts",
   "scripts": {
@@ -17,6 +17,7 @@
     "brain:health": "curl -sS ${APP_URL:-http://localhost:3000}/brain/health | jq",
     "test:load": "npx autocannon -d 30 -c 50 ${APP_URL:-http://localhost:3000}/brain/search?q=test",
     "test:sanity": "npm run brain:health",
+    "test:pulse": "ts-node -e \"require('./backend/pulse/engine-v2').runPulses()\"",
     "pulse:morning": "ts-node backend/pulse/morning.ts",
     "pulse:evening": "ts-node backend/pulse/evening.ts",
     "cron:start": "node dist/backend/jobs/cron.js"
@@ -25,7 +26,7 @@
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "pg": "^8.11.3",
-    "redis": "^4.6.12",
+    "ioredis": "^5.4.1",
     "dotenv": "^16.3.1",
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
