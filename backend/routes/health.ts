@@ -1,8 +1,68 @@
 import { Router } from 'express';
 import { getHealthMetrics, getLatencyMetrics } from '../middleware/metrics';
 import { versionManager } from '../version/manager';
+import { Pool } from 'pg';
 
 export const health = Router();
+
+// PostgreSQL connection check
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+});
+
+/**
+ * GET /health/live - Simple liveness check
+ * Returns 200 if service is alive
+ */
+health.get('/live', (req, res) => {
+  res.status(200).json({ 
+    status: 'alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * GET /health/ready - Readiness check
+ * Checks DB connection and index freshness
+ */
+health.get('/ready', async (req, res) => {
+  const checks = {
+    database: false,
+    indexFresh: false,
+    ready: false
+  };
+  
+  try {
+    // Check database connection
+    const dbCheck = await pool.query('SELECT 1');
+    checks.database = !!dbCheck.rows;
+    
+    // Check index freshness
+    const dbHealth = await getHealthMetrics();
+    const freshnessMinutes = dbHealth.freshness_minutes || 999;
+    checks.indexFresh = freshnessMinutes < 10; // Must be < 10 minutes old
+    
+    // Overall readiness
+    checks.ready = checks.database && checks.indexFresh;
+    
+    const statusCode = checks.ready ? 200 : 503;
+    
+    res.status(statusCode).json({
+      status: checks.ready ? 'ready' : 'not ready',
+      checks,
+      freshness_minutes: Math.round(freshnessMinutes),
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(503).json({
+      status: 'not ready',
+      checks,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 /**
  * GET /brain/health - Complete health check with metrics
@@ -27,7 +87,7 @@ health.get('/', async (req, res) => {
         total_versions: dbHealth.total_versions || versionHealth.totalVersions
       },
       
-      // Performance metrics
+      // Performance metrics with tags
       metrics: {
         p50_latency_ms: Math.round(latency.p50),
         p95_latency_ms: Math.round(latency.p95 || dbHealth.p95_latency_ms || 0),
@@ -65,7 +125,7 @@ health.get('/metrics', async (req, res) => {
   try {
     const hours = parseInt(req.query.hours as string) || 24;
     
-    // Get various latency metrics
+    // Get various latency metrics with phases
     const searchLatency = await getLatencyMetrics('search_latency_ms', hours);
     const requestLatency = await getLatencyMetrics('request_latency_ms', hours);
     const pulseLatency = await getLatencyMetrics('pulse_duration_ms', hours);
@@ -80,15 +140,18 @@ health.get('/metrics', async (req, res) => {
       latency: {
         search: {
           p50: Math.round(searchLatency.p50),
-          p95: Math.round(searchLatency.p95)
+          p95: Math.round(searchLatency.p95),
+          phase: 'query'
         },
         request: {
           p50: Math.round(requestLatency.p50),
-          p95: Math.round(requestLatency.p95)
+          p95: Math.round(requestLatency.p95),
+          phase: 'total'
         },
         pulse: {
           p50: Math.round(pulseLatency.p50),
-          p95: Math.round(pulseLatency.p95)
+          p95: Math.round(pulseLatency.p95),
+          phase: 'background'
         }
       },
       
@@ -110,5 +173,33 @@ health.get('/metrics', async (req, res) => {
     });
   }
 });
+
+// Graceful shutdown handler
+let shuttingDown = false;
+
+export function gracefulShutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  
+  console.log('🛑 Graceful shutdown initiated...');
+  
+  // Stop accepting new requests
+  health.get('/ready', (req, res) => {
+    res.status(503).json({ 
+      status: 'shutting down',
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // Wait for active requests to complete (max 10 seconds)
+  setTimeout(() => {
+    console.log('👋 Shutdown complete');
+    process.exit(0);
+  }, 10000);
+}
+
+// Handle SIGTERM from Railway
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 export default health;
