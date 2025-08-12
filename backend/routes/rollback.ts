@@ -5,11 +5,29 @@ import { logMetric } from '../middleware/metrics';
 export const rollback = Router();
 
 /**
+ * AUTH MIDDLEWARE - Check authorization token
+ */
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token || token !== process.env.AUTH_TOKEN) {
+    logMetric('auth_failure', 1, { endpoint: req.path });
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Valid Bearer token required'
+    });
+  }
+  
+  next();
+}
+
+/**
  * POST /brain/rollback - Rollback to specific version
+ * PROTECTED: Requires Bearer token
  * Body: { version: string }
  * DoD: Complete rollback in < 5 seconds
  */
-rollback.post('/', async (req, res) => {
+rollback.post('/', requireAuth, async (req, res) => {
   const startTime = Date.now();
   
   try {
@@ -25,7 +43,7 @@ rollback.post('/', async (req, res) => {
     // Log rollback attempt
     console.log(`🔄 Initiating rollback to version: ${version}`);
     
-    // Perform rollback
+    // Perform rollback (atomic in versionManager)
     await versionManager.rollback(version);
     
     // Calculate duration
@@ -63,8 +81,9 @@ rollback.post('/', async (req, res) => {
 
 /**
  * GET /brain/versions - List all available versions
+ * PROTECTED: Requires Bearer token
  */
-rollback.get('/versions', async (req, res) => {
+rollback.get('/versions', requireAuth, async (req, res) => {
   try {
     const versions = await versionManager.listVersions();
     const current = await versionManager.getCurrentVersion();
@@ -85,8 +104,9 @@ rollback.get('/versions', async (req, res) => {
 
 /**
  * GET /brain/diff - Compare two versions
+ * PROTECTED: Requires Bearer token
  */
-rollback.get('/diff', async (req, res) => {
+rollback.get('/diff', requireAuth, async (req, res) => {
   try {
     const { v1, v2 } = req.query;
     
