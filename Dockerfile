@@ -1,13 +1,14 @@
-# Simple Node.js without TypeScript
+# single-stage, без tsc
 FROM node:20-alpine
 WORKDIR /app
 
-# Copy everything
-COPY . .
+# только то, что нужно приложению
+COPY package*.json ./
+RUN npm install --omit=dev
 
-# Install dependencies
-RUN npm install --production
+# наш рантайм-файл
+COPY backend/server_v3.js backend/server_v3.js
 
-# No TypeScript compilation needed
+ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["node","backend/server_v3.js"]
