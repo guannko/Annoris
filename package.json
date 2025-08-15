@@ -7,13 +7,15 @@
     "build": "tsc -p tsconfig.json",
     "start": "node backend/server_v3.js",
     "dev": "ts-node backend/server_v3.ts"
-  },
+ {
+  "scripts": { "start": "node backend/server_v3.js" },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "@octokit/rest": "^20.0.2",
-    "dotenv": "^16.3.1"
-  },
+    "dotenv": "^16.3.1",
+    "@octokit/rest": "^20.0.2"
+  }
+}
   "devDependencies": {
     "typescript": "^5.3.3",
     "@types/node": "^20.10.5",
