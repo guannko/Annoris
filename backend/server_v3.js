@@ -1,8 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-// ВРЕМЕННО ОТКЛЮЧАЕМ PULSE
-// const { startPulse } = require('./pulse_worker');
+const { startPulse } = require('./pulse_worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,7 +16,7 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     service: 'annoris-autosave',
     timestamp: new Date().toISOString(),
-    pulse: 'temporarily disabled'
+    pulse: process.env.PULSE_ENABLED === 'true' ? 'enabled' : 'disabled'
   });
 });
 
@@ -37,18 +36,18 @@ app.post('/autosave', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     service: 'Annoris Autosave Service',
-    version: '3.0-hotfix',
+    version: '3.2',
     endpoints: ['/health', '/autosave'],
-    pulse: 'temporarily disabled - missing dependencies'
+    pulse: process.env.PULSE_ENABLED === 'true' ? 'beating 💓' : 'stopped'
   });
 });
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server v3.0-hotfix running on port ${PORT}`);
+  console.log(`Server v3.2 running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log('⚠️ Pulse temporarily disabled - need to add @octokit/rest');
   
-  // PULSE ОТКЛЮЧЕН ПОКА
-  // const stopPulse = startPulse();
+  // Start the pulse! 💓
+  const stopPulse = startPulse();
+  console.log(`💓 Pulse Engine: ${process.env.PULSE_ENABLED === 'true' ? 'BEATING!' : 'DISABLED'}`);
 });
