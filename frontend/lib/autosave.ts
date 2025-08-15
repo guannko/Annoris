@@ -37,11 +37,24 @@ export function startAutosave(opts: Opts) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${opts.token}`,
         },
-        body: JSON.stringify({ text, meta: { ...opts.meta, reason } }),
+        body: JSON.stringify({ 
+          text, 
+          token: opts.token,  // Also include in body for fallback
+          userId: opts.userId,
+          meta: { ...opts.meta, reason } 
+        }),
         signal: abort.signal,
       });
-      if (res.ok) lastSaved = text;
-    } catch (_) {
+      if (res.ok) {
+        lastSaved = text;
+        console.log(`✅ Autosaved: reason=${reason}`);
+      } else if (res.status === 429) {
+        console.warn("⏱️ Rate limited, will retry on next trigger");
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn(`❌ Autosave failed (${reason}):`, err.message);
+      }
       /* молча, повторит следующий триггер */
     } finally {
       inFlight = false;
@@ -60,15 +73,40 @@ export function startAutosave(opts: Opts) {
   // Периодически — даже если нет ввода
   tInterval = setInterval(() => save("interval"), intervalMs);
 
-  // Перед закрытием вкладки
+  // Перед закрытием вкладки (beacon с токеном в body)
   function beforeUnload() {
     const text = opts.getText();
     if (text && text !== lastSaved) {
-      navigator.sendBeacon?.(
+      // navigator.sendBeacon не может ставить заголовки, 
+      // поэтому передаём токен в body
+      const sent = navigator.sendBeacon?.(
         url,
-        new Blob([JSON.stringify({ text, meta: { ...opts.meta, reason: "beforeunload" } })],
-        { type: "application/json" })
+        new Blob([JSON.stringify({ 
+          text, 
+          token: opts.token,  // TOKEN В BODY для beacon!
+          userId: opts.userId,
+          meta: { ...opts.meta, reason: "beforeunload" } 
+        })], { type: "application/json" })
       );
+      
+      if (sent) {
+        console.log("🚪 Beacon autosave sent on unload");
+      } else {
+        // Fallback to sync XHR (блокирующий, но надёжный)
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", url, false); // false = sync
+          xhr.setRequestHeader("Content-Type", "application/json");
+          xhr.send(JSON.stringify({
+            text,
+            token: opts.token,
+            userId: opts.userId,
+            meta: { ...opts.meta, reason: "beforeunload-sync" }
+          }));
+        } catch {
+          // Last resort failed
+        }
+      }
     }
   }
   
@@ -77,12 +115,17 @@ export function startAutosave(opts: Opts) {
     if (document.hidden) beforeUnload();
   });
 
+  // Initial save on start
+  save("initial");
+
   return {
     onChange,                   // дергай при каждом изменении текста
+    save: () => save("manual"), // ручное сохранение
     stop() {
       clearTimeout(tIdle);
       clearInterval(tInterval);
       window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("visibilitychange", beforeUnload);
       abort?.abort();
     }
   };
