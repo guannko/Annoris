@@ -7,15 +7,24 @@ app.use(express.json());
 
 // Health check
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    version: "2.0.0",
+    features: ["pgvector", "hybrid-search", "blue-green", "autosave"]
+  });
 });
 
 // Brain system routes
 app.use("/", search);
 app.use("/", indexSwap);
 
+// Note: autosave route will be added when created
+// app.use("/", autosave);
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Brain System v2.0 running on port ${PORT}`);
   console.log(`Features: pgvector, hybrid search, blue-green deployment`);
+  console.log(`ENV required: DATABASE_URL, OPENAI_API_KEY, REDIS_URL, AUTH_TOKEN`);
 });
