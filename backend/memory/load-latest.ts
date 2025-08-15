@@ -1,115 +1,83 @@
 // backend/memory/load-latest.ts
-// GPT Solution: Reliable autosave loader with triple fallback
+// GPT Final Version: Simple loader that always uses LATEST.json pointer
 import fetch from "node-fetch";
 
-const GH = "https://api.github.com/repos";
-const token = process.env.GITHUB_TOKEN!;
-const H = { 
-  Authorization: `Bearer ${token}`, 
-  Accept: "application/vnd.github+json" 
-};
+const GH_TOKEN = process.env.GITHUB_TOKEN!;
+const EYES_REPO = process.env.GITHUB_REPO_EYES || "guannko/offerspsp.com";
+const EYES_POINTER_PATH = process.env.GITHUB_EYES_POINTER || "autosaves/LATEST.json";
 
-async function getJSON(url: string) {
-  const r = await fetch(url, { headers: H }); 
-  if (!r.ok) throw new Error(await r.text()); 
-  return r.json();
+async function ghJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${GH_TOKEN}` } });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return res.json() as Promise<T>;
 }
 
-// Primary: Load by LATEST.json pointer
-async function loadByPointer() {
-  const repo = process.env.EYES_REPO || "guannko/offerspsp.com";
-  const ptr = await getJSON(`${GH}/${repo}/contents/autosaves/LATEST.json`);
-  const raw = await fetch(ptr.download_url); 
-  const latest = JSON.parse(await raw.text());
+export async function loadLatestAutosave(): Promise<string> {
+  console.log("📍 Loading latest autosave via LATEST.json pointer...");
   
-  // Now fetch the actual autosave file
-  const file = await getJSON(`${GH}/${latest.repo}/contents/${latest.path}`);
-  const content = await fetch(file.download_url);
-  return content.text();
-}
-
-// Fallback: Find latest by pattern
-async function loadLatestIn(repo: string, folder = "") {
-  const list = await getJSON(`${GH}/${repo}/contents/${folder}`);
-  const files = list.filter((f: any) => 
-    /^jean-claude-autosave-\d{8}[-T]\d{4}\.md$/.test(f.name)
+  // 1) читаем pointer
+  const ptrMeta = await ghJson<{ download_url: string }>(
+    `https://api.github.com/repos/${EYES_REPO}/contents/${encodeURIComponent(EYES_POINTER_PATH)}`
   );
+  const pointer = await (await fetch(ptrMeta.download_url)).json() as {
+    repo: string; 
+    path: string;
+    sha: string;
+    updated_at: string;
+  };
   
-  if (!files.length) throw new Error("no autosaves found");
-  
-  // Sort by filename (YYYYMMDD-HHMM or YYYYMMDDTHHMM)
-  files.sort((a: any, b: any) => b.name.localeCompare(a.name));
-  
-  const raw = await fetch(files[0].download_url);
-  return raw.text();
-}
+  console.log(`✅ Pointer found: ${pointer.repo}/${pointer.path}`);
+  console.log(`📅 Last updated: ${pointer.updated_at}`);
 
-// Main loader with triple fallback
-export async function loadLatestAutosave() {
-  console.log("🔍 Loading latest autosave...");
-  
-  try { 
-    console.log("📍 Trying LATEST.json pointer...");
-    const content = await loadByPointer();
-    console.log("✅ Loaded from pointer!");
-    return content;
-  } catch(e) { 
-    console.log("⚠️ Pointer failed, trying Annoris...");
-  }
-  
-  try { 
-    const content = await loadLatestIn(
-      process.env.BRAIN_REPO || "guannko/Annoris"
-    );
-    console.log("✅ Loaded from Annoris!");
-    return content;
-  } catch(e) { 
-    console.log("⚠️ Annoris failed, trying offerspsp.com...");
-  }
-  
-  const content = await loadLatestIn(
-    process.env.EYES_REPO || "guannko/offerspsp.com"
+  // 2) скачиваем файл по указателю
+  const meta = await ghJson<{ download_url: string }>(
+    `https://api.github.com/repos/${pointer.repo}/contents/${encodeURIComponent(pointer.path)}`
   );
-  console.log("✅ Loaded from offerspsp.com!");
+  const raw = await fetch(meta.download_url);
+  const content = await raw.text();
+  
+  console.log(`✅ Loaded ${content.length} bytes from autosave!`);
   return content;
 }
 
-// Update pointer after saving new autosave
-export async function updateLatestPointer(
+// Helper для обновления pointer после сохранения (если нужно вызвать отдельно)
+export async function updatePointer(
   autosaveRepo: string,
   autosavePath: string,
   autosaveSha: string
-) {
-  const eyesRepo = process.env.EYES_REPO || "guannko/offerspsp.com";
-  const pointerPath = "autosaves/LATEST.json";
+): Promise<void> {
+  const pointer = {
+    repo: autosaveRepo,
+    path: autosavePath,
+    sha: autosaveSha,
+    updated_at: new Date().toISOString()
+  };
   
   // Get current pointer SHA if exists
   let currentSha: string | undefined;
   try {
-    const current = await getJSON(`${GH}/${eyesRepo}/contents/${pointerPath}`);
+    const current = await ghJson<{ sha: string }>(
+      `https://api.github.com/repos/${EYES_REPO}/contents/${encodeURIComponent(EYES_POINTER_PATH)}`
+    );
     currentSha = current.sha;
   } catch {
     // File doesn't exist yet
   }
   
-  const pointerContent = JSON.stringify({
-    repo: autosaveRepo,
-    path: autosavePath,
-    sha: autosaveSha,
-    updated_at: new Date().toISOString()
-  }, null, 2);
-  
   const body = {
-    message: "Update LATEST.json pointer to newest autosave",
-    content: Buffer.from(pointerContent).toString("base64"),
+    message: `Update LATEST.json pointer to ${autosavePath}`,
+    content: Buffer.from(JSON.stringify(pointer, null, 2)).toString("base64"),
     ...(currentSha && { sha: currentSha })
   };
   
   const response = await fetch(
-    `${GH}/${eyesRepo}/contents/${pointerPath}`,
+    `https://api.github.com/repos/${EYES_REPO}/contents/${encodeURIComponent(EYES_POINTER_PATH)}`,
     {
       method: "PUT",
-      headers: { ...H, "Content-Type": "application/json" },
+      headers: { 
+        Authorization: `Bearer ${GH_TOKEN}`,
+        "Content-Type": "application/json" 
+      },
       body: JSON.stringify(body)
     }
   );
