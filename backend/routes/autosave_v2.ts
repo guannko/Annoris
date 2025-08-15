@@ -2,7 +2,7 @@
 import { Router } from "express";
 import fetch from "node-fetch";
 import { captureEvent } from "../memory/capture";
-import { auth } from "../middleware/auth";
+import { auth } from "../middleware/auth_v2"; // Using v2 with beacon support
 
 const r = Router();
 
@@ -25,7 +25,7 @@ type Pointer = {
 // ── Rate Limiting ────────────────────────────────────────────────
 const lastHit = new Map<string, number>(); // key=userId
 
-function rateLimit(userId: string, ms = 5000): boolean {
+function allow(userId: string, ms = 5000): boolean {
   const now = Date.now();
   const prev = lastHit.get(userId) ?? 0;
   if (now - prev < ms) return false;
@@ -86,14 +86,18 @@ r.post("/autosave", auth, async (req, res) => {
     
     if (!text) return res.status(400).json({ error: "text required" });
     
-    // Rate limiting check
-    if (!rateLimit(userId)) {
+    // Rate limiting check (improved function name)
+    if (!allow(userId)) {
       return res.status(429).json({ 
         ok: false, 
         error: "too many autosaves",
         retryAfter: 5000 
       });
     }
+
+    // Log the save reason if provided
+    const reason = meta?.reason || "unknown";
+    console.log(`💾 Autosave triggered: userId=${userId}, reason=${reason}`);
 
     await captureEvent({ userId, source: "autosave", bucket: "left", text, meta });
 
@@ -119,14 +123,17 @@ r.post("/autosave", auth, async (req, res) => {
       existing?.sha
     );
 
+    console.log(`✅ Autosave complete: ${filename}`);
+
     res.json({
       ok: true,
       file: { repo: ANNORIS_REPO, path: autosavePath, sha: autosaveSha },
       pointer: { repo: EYES_REPO, path: EYES_POINTER_PATH, updated: true },
       timestamp: new Date().toISOString(),
+      reason,
     });
   } catch (e: any) {
-    console.error("autosave_v2 error:", e);
+    console.error("❌ autosave_v2 error:", e);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -135,6 +142,7 @@ r.get("/autosave/health", (_req, res) => {
   res.json({
     ok: true,
     service: "autosave_v2",
+    auth: "flexible (header/body/query)",
     env: { ANNORIS_REPO, ANNORIS_PATH, EYES_REPO, EYES_POINTER_PATH, hasToken: !!GH_TOKEN },
     rateLimit: {
       windowMs: 5000,
