@@ -2,26 +2,16 @@
   "name": "annoris-autosave",
   "version": "1.0.0",
   "description": "Railway autosave service",
-  "main": "dist/backend/server_v3.js",
+  "private": true,
+  "main": "backend/server_v3.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "node backend/server_v3.js",
-    "dev": "ts-node backend/server_v3.ts"
- {
-  "scripts": { "start": "node backend/server_v3.js" },
+    "start": "node backend/server_v3.js"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "@octokit/rest": "^20.0.2"
-  }
-}
-  "devDependencies": {
-    "typescript": "^5.3.3",
-    "@types/node": "^20.10.5",
-    "@types/express": "^4.17.21",
-    "@types/cors": "^2.8.17",
-    "ts-node": "^10.9.2"
   },
   "engines": {
     "node": ">=20.0.0"
