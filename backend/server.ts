@@ -1,6 +1,7 @@
 import express from "express";
 import search from "./routes/search";
 import indexSwap from "./routes/index-swap";
+import autosave from "./routes/autosave";
 
 const app = express();
 app.use(express.json());
@@ -18,13 +19,12 @@ app.get("/health", (req, res) => {
 // Brain system routes
 app.use("/", search);
 app.use("/", indexSwap);
-
-// Note: autosave route will be added when created
-// app.use("/", autosave);
+app.use("/", autosave);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Brain System v2.0 running on port ${PORT}`);
-  console.log(`Features: pgvector, hybrid search, blue-green deployment`);
+  console.log(`Features: pgvector, hybrid search, blue-green, autosave`);
   console.log(`ENV required: DATABASE_URL, OPENAI_API_KEY, REDIS_URL, AUTH_TOKEN`);
+  console.log(`GitHub ENV: GITHUB_TOKEN, GITHUB_REPO, GITHUB_PATH`);
 });
