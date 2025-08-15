@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+const { startPulse } = require('./pulse_worker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,7 +15,8 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     service: 'annoris-autosave',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    pulse: process.env.PULSE_ENABLED === 'true' ? 'enabled' : 'disabled'
   });
 });
 
@@ -34,13 +36,18 @@ app.post('/autosave', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     service: 'Annoris Autosave Service',
-    version: '3.0',
-    endpoints: ['/health', '/autosave']
+    version: '3.1',
+    endpoints: ['/health', '/autosave'],
+    pulse: process.env.PULSE_ENABLED === 'true' ? 'beating' : 'stopped'
   });
 });
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server v3 running on port ${PORT}`);
+  console.log(`Server v3.1 running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  
+  // Start the pulse!
+  const stopPulse = startPulse();
+  console.log(`💓 Pulse Engine: ${process.env.PULSE_ENABLED === 'true' ? 'STARTED' : 'DISABLED'}`);
 });
