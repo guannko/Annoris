@@ -22,6 +22,28 @@ type Pointer = {
   updated_at: string;
 };
 
+// ── Rate Limiting ────────────────────────────────────────────────
+const lastHit = new Map<string, number>(); // key=userId
+
+function rateLimit(userId: string, ms = 5000): boolean {
+  const now = Date.now();
+  const prev = lastHit.get(userId) ?? 0;
+  if (now - prev < ms) return false;
+  lastHit.set(userId, now); 
+  return true;
+}
+
+// Clean up old entries periodically (prevent memory leak)
+setInterval(() => {
+  const now = Date.now();
+  const expired = now - 60000; // Clear entries older than 1 minute
+  for (const [userId, timestamp] of lastHit.entries()) {
+    if (timestamp < expired) {
+      lastHit.delete(userId);
+    }
+  }
+}, 60000); // Run cleanup every minute
+
 // ── GitHub helpers ────────────────────────────────────────────────
 async function ghPutFile(repo: string, path: string, contentUtf8: string, message: string, sha?: string) {
   const url = `${GH_BASE(repo)}/${encodeURIComponent(path)}`;
@@ -61,7 +83,17 @@ r.post("/autosave", auth, async (req, res) => {
     const { text, meta, userId = "boris", description, stats } = (req.body ?? {}) as {
       text?: string; meta?: any; userId?: string; description?: string; stats?: any;
     };
+    
     if (!text) return res.status(400).json({ error: "text required" });
+    
+    // Rate limiting check
+    if (!rateLimit(userId)) {
+      return res.status(429).json({ 
+        ok: false, 
+        error: "too many autosaves",
+        retryAfter: 5000 
+      });
+    }
 
     await captureEvent({ userId, source: "autosave", bucket: "left", text, meta });
 
@@ -104,6 +136,10 @@ r.get("/autosave/health", (_req, res) => {
     ok: true,
     service: "autosave_v2",
     env: { ANNORIS_REPO, ANNORIS_PATH, EYES_REPO, EYES_POINTER_PATH, hasToken: !!GH_TOKEN },
+    rateLimit: {
+      windowMs: 5000,
+      activeUsers: lastHit.size
+    },
     timestamp: new Date().toISOString(),
   });
 });
