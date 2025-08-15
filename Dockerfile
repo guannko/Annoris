@@ -4,7 +4,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+# build TS without relying on package.json scripts
+RUN npx tsc -p tsconfig.json
 
 # ---- run ----
 FROM node:20-alpine
@@ -14,4 +15,4 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
 EXPOSE 3000
-CMD ["node","dist/backend/server.js"]
+CMD ["node","dist/backend/server_v3.js"]
