@@ -1,6 +1,10 @@
+# --- keep image clean ---
 node_modules
+npm-debug.log
 .git
-.github
-dist
-.env
+.gitignore
 Dockerfile
+Dockerfile.new
+
+# НЕ игнорируем backend!
+# (специально ничего про backend тут нет)
