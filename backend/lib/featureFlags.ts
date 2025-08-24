@@ -1,16 +1,28 @@
-import { getRedis } from "../lib/redis";
-type Flag = "hybridSearch"|"indexBlueGreen"|"pulseDynamicRate";
-const DEFAULTS: Record<Flag, boolean> = {
-  hybridSearch: true,
-  indexBlueGreen: true,
-  pulseDynamicRate: true
-};
-export async function isEnabled(flag: Flag) {
-  const r = await getRedis();
-  const v = await r?.get(`ff:${flag}`);
-  return v === null || v === undefined ? DEFAULTS[flag] : v === "1";
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL!);
+
+export async function isEnabled(flag: string): Promise<boolean> {
+  try {
+    const value = await redis.get(`ff:${flag}`);
+    return value === '1' || value === 'true';
+  } catch {
+    return false; // Default to disabled if Redis is down
+  }
 }
-export async function setFlag(flag: Flag, on: boolean) {
-  const r = await getRedis(); if (!r) return;
-  await r.set(`ff:${flag}`, on ? "1":"0");
+
+export async function setFlag(flag: string, enabled: boolean): Promise<void> {
+  await redis.set(`ff:${flag}`, enabled ? '1' : '0');
+}
+
+export async function getAllFlags(): Promise<Record<string, boolean>> {
+  const keys = await redis.keys('ff:*');
+  const flags: Record<string, boolean> = {};
+  
+  for (const key of keys) {
+    const flag = key.replace('ff:', '');
+    flags[flag] = await isEnabled(flag);
+  }
+  
+  return flags;
 }

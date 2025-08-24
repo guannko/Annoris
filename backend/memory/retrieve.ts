@@ -1,47 +1,65 @@
-import { Pool } from "pg";
-import { getEmbeddingsEngine } from "../core/embeddings";
-import { isEnabled } from "../lib/featureFlags";
-const pg = new Pool({ connectionString: process.env.DATABASE_URL });
+import { Pool } from 'pg';
+import { generateEmbedding } from '../lib/embeddings';
+import { isEnabled } from '../lib/featureFlags';
 
-export async function hybridSearch(userId: string, query: string, k = 5) {
-  const eng = getEmbeddingsEngine(process.env.OPENAI_API_KEY!);
-  const qvec = await eng.generateEmbedding(query);
-  const hybrid = await isEnabled("hybridSearch");
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-  const c = await pg.connect();
-  try {
-    const results = [];
-
-    // 1) brain_index (быстрое «оглавление»)
-    const idx = await c.query(
-      `SELECT path, title, summary, 1 - (vec <=> $1::vector) AS score
-       FROM brain_index WHERE vec IS NOT NULL
-       ORDER BY vec <=> $1::vector ASC LIMIT $2`, [qvec, k]);
-    results.push(...idx.rows.map(r => ({type:"index", ...r})));
-
-    if (hybrid) {
-      // 2) vector по событиям
-      const v = await c.query(
-        `SELECT e.id, e.text, 1 - (b.vec <=> $1::vector) AS score
-         FROM brain_embeddings b
-         JOIN brain_events e ON e.id=b.event_id AND e.user_id=$2
-         ORDER BY b.vec <=> $1::vector ASC LIMIT $3`,
-        [qvec, userId, k]);
-      results.push(...v.rows.map(r => ({type:"vector", ...r})));
-
-      // 3) trgm fuzzy по тексту
-      const t = await c.query(
-        `SELECT id, text, similarity(text,$1) AS score
-         FROM brain_events WHERE user_id=$2
-         ORDER BY text <-> $1 ASC LIMIT $3`,
-        [query, userId, k]);
-      results.push(...t.rows.map(r => ({type:"text", ...r})));
-    }
-
-    // нормализация + top‑k
-    return results
-      .sort((a,b)=>b.score-a.score)
-      .slice(0, k)
-      .map(r => r.summary ? `${r.title}: ${r.summary}` : r.text);
-  } finally { c.release(); }
+export async function hybridSearch(params: {
+  query: string;
+  userId: string;
+  topK: number;
+}) {
+  const useHybrid = await isEnabled('hybridSearch');
+  
+  if (!useHybrid) {
+    // Simple keyword search
+    const result = await pool.query(
+      `SELECT * FROM brain_events 
+       WHERE user_id = $1 AND text ILIKE $2
+       ORDER BY created_at DESC LIMIT $3`,
+      [params.userId, `%${params.query}%`, params.topK]
+    );
+    return result.rows;
+  }
+  
+  // Hybrid: vector + keyword + fuzzy
+  const embedding = await generateEmbedding(params.query);
+  
+  const result = await pool.query(`
+    WITH vector_search AS (
+      SELECT *, embedding <-> $2::vector AS distance
+      FROM brain_events
+      WHERE user_id = $1
+      ORDER BY distance LIMIT $3
+    ),
+    keyword_search AS (
+      SELECT *, 0 AS distance
+      FROM brain_events
+      WHERE user_id = $1 AND text ILIKE $4
+      LIMIT $3
+    ),
+    fuzzy_search AS (
+      SELECT *, similarity(text, $5) AS score
+      FROM brain_events
+      WHERE user_id = $1 AND text % $5
+      ORDER BY score DESC LIMIT $3
+    )
+    SELECT DISTINCT ON (id) * FROM (
+      SELECT * FROM vector_search
+      UNION ALL
+      SELECT * FROM keyword_search
+      UNION ALL
+      SELECT *, 1 - score AS distance FROM fuzzy_search
+    ) combined
+    ORDER BY id, distance
+    LIMIT $3
+  `, [
+    params.userId,
+    `[${embedding.join(',')}]`,
+    params.topK,
+    `%${params.query}%`,
+    params.query
+  ]);
+  
+  return result.rows;
 }

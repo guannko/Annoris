@@ -1,10 +1,26 @@
-import { Router } from "express";
-import { hybridSearch } from "../memory/retrieve";
+import { Router } from 'express';
+import { Pool } from 'pg';
+import { auth } from '../middleware/auth';
+import { hybridSearch } from '../memory/retrieve';
 
-export default Router().get("/brain/search", async (req, res) => {
-  const q = String(req.query.q || "");
-  const user = String(req.query.user || "default");
-  if (!q) return res.status(400).json({error:"q required"});
-  const ctx = await hybridSearch(user, q, 5);
-  res.json({ hits: ctx });
+const r = Router();
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+r.get('/brain/search', auth, async (req, res) => {
+  try {
+    const { q, user = 'boris', k = 10 } = req.query as any;
+    if (!q) return res.status(400).json({ error: 'q required' });
+    
+    const results = await hybridSearch({
+      query: q,
+      userId: user,
+      topK: Math.min(k, 100),
+    });
+    
+    res.json({ ok: true, query: q, results });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
+
+export default r;

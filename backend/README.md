@@ -1,110 +1,55 @@
-# Brain System v2.0 - Production Setup
+# Brain System v2.0 - Production Backend
 
-## 🚀 Quick Start (Smoke Test)
+## Features
+- ✅ pgvector for semantic search
+- ✅ Hybrid RAG search (vector + keyword + fuzzy)
+- ✅ Feature flags with Redis
+- ✅ Blue-green deployment
+- ✅ Partitioning for scale
+- ✅ Autosave to DB and GitHub
 
-### 1. Environment Variables
-```bash
-DATABASE_URL=postgresql://user:pass@host:5432/brain?sslmode=require
+## Setup
+
+### 1. Install PostgreSQL Extensions
+\`\`\`sql
+CREATE EXTENSION vector;
+CREATE EXTENSION pg_trgm;
+\`\`\`
+
+### 2. Set Environment Variables
+\`\`\`bash
+DATABASE_URL=postgresql://user:pass@host:5432/brain
 OPENAI_API_KEY=sk-...
-REDIS_URL=redis://default:pass@host:6379/0
+REDIS_URL=redis://localhost:6379
 AUTH_TOKEN=your-secret-token
-GITHUB_REPO=guannko/Annoris
 GITHUB_TOKEN=ghp_...
+GITHUB_REPO=guannko/offerspsp.com
 GITHUB_PATH=autosaves
-GIT_AUTHOR_NAME=Jean Claude
-GIT_AUTHOR_EMAIL=jean@annoris.ai
-```
-
-### 2. Database Setup
-```sql
--- Run as superuser
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-```
+GIT_AUTHOR_NAME=Iskra
+GIT_AUTHOR_EMAIL=iskra@offerspsp.com
+\`\`\`
 
 ### 3. Run Migrations
-```bash
+\`\`\`bash
 npm run db:migrate
-```
+\`\`\`
 
-### 4. Analyze Tables (for performance)
-```sql
-ANALYZE brain_embeddings;
-ANALYZE brain_index;
-```
-
-### 5. Start Server
-```bash
-# Development
-npm run dev
-
-# Production
-npm run build && npm start
-```
-
-### 6. Test Endpoints
-
-#### Health Check
-```bash
-curl localhost:3000/health
-```
-
-#### Search
-```bash
-curl "localhost:3000/brain/search?q=iskra&user=boris"
-```
-
-#### Blue-Green Swap (requires auth)
-```bash
-curl -X POST http://localhost:3000/brain/index/swap \
-  -H "Authorization: Bearer $AUTH_TOKEN"
-```
-
-#### Test Pulse Engine
-```bash
-node -e "import('./backend/pulse/engine-dynamic.ts').then(m=>m.tickPulse())"
-```
-
-### 7. Redis Feature Flags
-```bash
+### 4. Enable Feature Flags
+\`\`\`bash
 redis-cli SET ff:hybridSearch 1
 redis-cli SET ff:indexBlueGreen 1
 redis-cli SET ff:pulseDynamicRate 1
-```
+\`\`\`
 
-## 📊 Load Testing
-```bash
-npm run test:load
-```
+### 5. Start Server
+\`\`\`bash
+npm run dev  # Development
+npm start    # Production
+\`\`\`
 
-## 🔧 Production Checklist
+## API Endpoints
 
-- [ ] PostgreSQL with pgvector extension
-- [ ] Redis for caching and feature flags
-- [ ] All ENV variables configured
-- [ ] Migrations executed
-- [ ] Tables analyzed
-- [ ] Feature flags enabled
-- [ ] Auth token secured
-- [ ] GitHub Actions secrets configured
-
-## 🚀 Features
-
-- **pgvector** - Vector similarity search
-- **Hybrid RAG** - 3-algorithm search (text + vector + index)
-- **Partitioning** - Daily partitions for scalability
-- **Blue-Green** - Zero-downtime deployments
-- **Feature Flags** - Toggle features without restart
-- **Dynamic Pulse** - Adaptive rate based on load
-- **Quiet Windows** - 22:30-06:30 no pulses
-
-## 📈 Metrics
-
-Expected improvements:
-- Search: 100ms → 50ms (pgvector)
-- Scale: 1K → 1M+ events (partitions)
-- Deploy: downtime → zero (blue-green)
-- Quality: single → 3x hybrid search
-
----
-*Brain System v2.0 - Production Ready*
+- \`GET /health\` - Health check
+- \`GET /brain/search?q=query&user=boris\` - Hybrid search
+- \`POST /brain/index/swap\` - Blue-green deployment
+- \`POST /autosave\` - Save to DB and GitHub

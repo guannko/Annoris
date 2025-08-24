@@ -1,70 +1,45 @@
--- extensions
+-- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- events (сырьё)
-CREATE TABLE IF NOT EXISTS brain_events (
-  id            BIGSERIAL PRIMARY KEY,
-  user_id       TEXT NOT NULL,
-  source        TEXT NOT NULL,             -- chat|pulse|webhook|system
-  bucket        TEXT NOT NULL,             -- left|right|eyes|ears
-  ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
-  text          TEXT NOT NULL,
-  meta          JSONB NOT NULL DEFAULT '{}'::jsonb
-) PARTITION BY RANGE (ts);
+-- Add vector column to brain_events
+ALTER TABLE brain_events 
+ADD COLUMN IF NOT EXISTS embedding vector(1536);
 
--- суточные партиции (создаём процедуру + cron)
-CREATE OR REPLACE FUNCTION make_daily_partition(day DATE)
-RETURNS void LANGUAGE plpgsql AS $$
+-- Create index for vector search
+CREATE INDEX IF NOT EXISTS brain_events_embedding_idx 
+ON brain_events USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- Create TRGM index for fuzzy search
+CREATE INDEX IF NOT EXISTS brain_events_text_trgm_idx 
+ON brain_events USING gin (text gin_trgm_ops);
+
+-- Partition brain_events by day
+ALTER TABLE brain_events 
+SET (autovacuum_vacuum_scale_factor = 0.01);
+
+-- Create partitions for next 30 days
+DO $$
 DECLARE
-  p_name TEXT := format('brain_events_%s', to_char(day,'YYYYMMDD'));
+  i INTEGER;
+  partition_date DATE;
+  partition_name TEXT;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = p_name) THEN
-    EXECUTE format($f$
-      CREATE TABLE %I PARTITION OF brain_events
-      FOR VALUES FROM (%L) TO (%L);
-    $f$, p_name, day::timestamptz, (day + 1)::timestamptz);
-  END IF;
-END$$;
+  FOR i IN 0..30 LOOP
+    partition_date := CURRENT_DATE + i;
+    partition_name := 'brain_events_' || to_char(partition_date, 'YYYYMMDD');
+    
+    EXECUTE format('
+      CREATE TABLE IF NOT EXISTS %I PARTITION OF brain_events
+      FOR VALUES FROM (%L) TO (%L)',
+      partition_name,
+      partition_date,
+      partition_date + 1
+    );
+  END LOOP;
+END $$;
 
-SELECT make_daily_partition(current_date);
-SELECT make_daily_partition(current_date + 1);
-
--- индексы
-CREATE INDEX IF NOT EXISTS idx_brain_events_ts ON brain_events USING brin (ts);
-CREATE INDEX IF NOT EXISTS idx_brain_events_trgm ON brain_events USING gin (text gin_trgm_ops);
-
--- embeddings
-CREATE TABLE IF NOT EXISTS brain_embeddings (
-  event_id   BIGINT PRIMARY KEY REFERENCES brain_events(id) ON DELETE CASCADE,
-  model      TEXT NOT NULL,
-  vec        VECTOR(1536) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_brain_embeddings_vec ON brain_embeddings USING ivfflat (vec) WITH (lists=100);
-CREATE INDEX IF NOT EXISTS idx_brain_embeddings_model ON brain_embeddings (model);
-
--- материализованный индекс (brain index)
-CREATE TABLE IF NOT EXISTS brain_index (
-  id         BIGSERIAL PRIMARY KEY,
-  path       TEXT NOT NULL,
-  title      TEXT NOT NULL,
-  sha        TEXT NOT NULL,
-  tags       TEXT[] NOT NULL DEFAULT '{}',
-  summary    TEXT NOT NULL,
-  vec        VECTOR(1536),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_brain_index_sha ON brain_index(sha);
-CREATE INDEX IF NOT EXISTS idx_brain_index_vec ON brain_index USING ivfflat (vec) WITH (lists=100);
-CREATE INDEX IF NOT EXISTS idx_brain_index_tags ON brain_index USING gin (tags);
-
--- метрики (минутная агрегация)
-CREATE TABLE IF NOT EXISTS brain_metrics_1m (
-  minute_ts   TIMESTAMPTZ PRIMARY KEY,
-  req_count   INT NOT NULL,
-  p50_ms      INT NOT NULL,
-  p95_ms      INT NOT NULL,
-  hit_rate    NUMERIC(5,2) NOT NULL,
-  errors      INT NOT NULL
-);
+-- Create BRIN index for time-series queries
+CREATE INDEX IF NOT EXISTS brain_events_created_at_brin 
+ON brain_events USING brin (created_at);
