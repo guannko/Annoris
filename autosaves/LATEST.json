@@ -1,7 +1,22 @@
 {
   "repo": "guannko/Annoris",
-  "path": "autosaves/jean-claude-autosave-20250815-2120.md",
-  "sha": "pending_manual_creation",
-  "updated_at": "2025-08-15T21:20:00Z",
-  "description": "Railway deployment fix with GPT solution"
+  "path": "autosaves/autosave_2025-11-04_context-recovery-rag-timeline.md",
+  "sha": "e227dff3efdcc450707f78eb000e228ad0230de1",
+  "updated_at": "2025-11-04T16:32:14Z",
+  "description": "Context recovery session - RAG timeline clarification",
+  "status": "INCOMPLETE - need to integrate RAG into index.ts",
+  "next_steps": [
+    "Integrate context.service.ts into src/index.ts",
+    "Add Qdrant credentials to .env",
+    "Test RAG locally",
+    "Deploy to Railway"
+  ],
+  "current_state": {
+    "repo": "brain-index-geo-monolith",
+    "branch": "main",
+    "working": true,
+    "rag_added": true,
+    "rag_integrated": false,
+    "message": "Using in-memory storage (temporary)"
+  }
 }
