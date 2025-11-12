@@ -1,0 +1,287 @@
+{
+  "name": "Make.com Gateway",
+  "id": "WsVlI8ld32XAk5JV",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "make-gateway",
+        "options": {}
+      },
+      "id": "8d64c38f-17f6-4e35-ac3b-b48aab8edc74",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "4cd935b0-74dd-4a94-9e05-e5eaa5e4fb44"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "37fc6e70-f72a-4a6f-aea0-86c07ca18dd4",
+              "name": "action",
+              "value": "={{ $json.body.action }}",
+              "type": "string"
+            },
+            {
+              "id": "cf4b3d97-a0ff-40d2-bb09-7f5f3f1d1e09",
+              "name": "scenarioId",
+              "value": "={{ $json.body.scenarioId }}",
+              "type": "string"
+            },
+            {
+              "id": "3e1c6d35-17b9-460f-aac1-71d1d47f94f4",
+              "name": "data",
+              "value": "={{ $json.body.data }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "12f84a5f-1a11-4e77-957a-8af2f2b93b39",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "f631e57d-d99f-4c87-b4ec-dcca7668bf3d",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "list",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "21d2e6f4-6c39-4f09-b67c-b2cc65a95b4c",
+      "name": "Switch Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://eu2.make.com/api/v2/scenarios",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "teamId",
+              "value": "2552758"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b8f7e3c-9d12-4f0e-a29f-8c6c8a2f7d4e",
+      "name": "List Scenarios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "make-api-token",
+          "name": "Make.com API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://eu2.make.com/api/v2/scenarios/{{ $json.scenarioId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "4c9e8f4d-0e23-5g1f-b30g-9d7d9b3g8e5f",
+      "name": "Get Scenario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "make-api-token",
+          "name": "Make.com API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://eu2.make.com/api/v2/scenarios/{{ $json.scenarioId }}/run",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "data",
+              "value": "={{ $json.data }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5d0f9g5e-1f34-6h2g-c41h-0e8e0c4h9f6g",
+      "name": "Run Scenario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "make-api-token",
+          "name": "Make.com API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://eu2.make.com/api/v2/scenarios/{{ $json.scenarioId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "scheduling",
+              "value": "={ \"type\": \"immediately\" }"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6e1g0h6f-2g45-7i3h-d52i-1f9f1d5i0g7h",
+      "name": "Start Scenario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "make-api-token",
+          "name": "Make.com API Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://eu2.make.com/api/v2/scenarios/{{ $json.scenarioId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "scheduling",
+              "value": "={ \"type\": \"indefinitely\" }"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7f2h1i7g-3h56-8j4i-e63j-2g0g2e6j1h8i",
+      "name": "Stop Scenario",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 500],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "make-api-token",
+          "name": "Make.com API Token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Switch Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Action": {
+      "main": [
+        [
+          {
+            "node": "List Scenarios",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Scenario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Scenario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start Scenario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop Scenario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-12T18:00:00.000Z",
+  "versionId": "latest"
+}
